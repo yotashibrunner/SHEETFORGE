@@ -54,7 +54,7 @@ HARD RULES (non-negotiable — these are why this product doesn't get 1-star rev
 
 def generate_spec(niche, template_type):
     body = json.dumps({
-        "model": MODEL, "max_tokens": 4096,
+        "model": MODEL, "max_tokens": 8192,
         "system": CONTRACT,
         "messages": [{"role": "user",
             "content": f"Niche: {niche}\nTemplate: {template_type}\n"
