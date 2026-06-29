@@ -322,15 +322,18 @@ def write_outputs(cands, top, outdir):
         json.dump(queue, f, indent=2)
 
     # catalog.generated.json -> shaped for forge_batch.py.
-    # NOTE: field names mirror the documented catalog (niche + template pair).
-    # If your real catalog.json uses different keys, remap here (one line each).
+    # Real catalog.json schema (verified): a list of {niche, template} ONLY.
+    # forge_batch.py reads it["niche"] + it["template"], and derives the .xlsx
+    # filename from slug(it["template"]) -> "template" must be a unique, descriptive
+    # name. c.archetype is a bare word ("tracker") shared across niches, so two
+    # winners would collide on one file; c.title ("Ebay Reseller Tracker") is unique
+    # and matches how the real catalog phrases its template names.
+    # trend_score + tags are intentionally dropped here (not in the real schema);
+    # they are preserved in full inside trend_queue.json, so no signal is lost.
     catalog = [
         {
             "niche": c.niche,
-            "template": c.archetype,
-            "title": c.title,
-            "tags": c.keywords,
-            "trend_score": c.score,
+            "template": c.title,
         }
         for c in winners
     ]
@@ -349,8 +352,13 @@ def maybe_build(catalog_path, forge_dir):
               f"Queue + catalog are written; run your batch runner on catalog.generated.json.")
         return
     print(f"\n>> handing winners to the forge: {batch}")
+    # forge_batch.py invocation is positional: `python forge_batch.py <catalog>`
+    # (main(sys.argv[1])). The existing call already matches; we only make the
+    # catalog path absolute so it still resolves after cwd switches to forge_dir
+    # (matters when --outdir and --forge-dir differ).
     try:
-        subprocess.run([sys.executable, batch, catalog_path], cwd=forge_dir, check=True)
+        subprocess.run([sys.executable, batch, os.path.abspath(catalog_path)],
+                       cwd=forge_dir, check=True)
     except subprocess.CalledProcessError as e:
         _warn(f"forge_batch exited {e.returncode}. Catalog is valid; inspect the build log.")
 
