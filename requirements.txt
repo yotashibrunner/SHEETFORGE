@@ -1,3 +1,4 @@
 requests
 pytrends
 anthropic
+openpyxl
