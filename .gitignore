@@ -13,6 +13,12 @@ __pycache__/
 trend_queue.json
 catalog.generated.json
 
+# Forge build output + local demo artifacts
+catalog/
+*.xlsx
+*.pdf
+*.zip
+
 # Local config / secrets
 config_local.py
 .env
