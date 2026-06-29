@@ -58,9 +58,33 @@ def find_soffice():
     return None
 
 
+# LibreOffice user-profile override that forces formulas to ALWAYS recalculate on
+# load. Without this, a headless convert keeps the (empty) cached values openpyxl
+# wrote, so every formula reads back blank and even #DIV/0!/#REF! go undetected.
+# OOXMLRecalcMode/ODFRecalcMode: 0 = always recalc, 1 = never, 2 = prompt.
+RECALC_XCU = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+ <item oor:path="/org.openoffice.Office.Calc/Formula/Load">
+  <prop oor:name="OOXMLRecalcMode" oor:op="fuse"><value>0</value></prop>
+ </item>
+ <item oor:path="/org.openoffice.Office.Calc/Formula/Load">
+  <prop oor:name="ODFRecalcMode" oor:op="fuse"><value>0</value></prop>
+ </item>
+</oor:items>
+"""
+
+
+def seed_recalc_profile(profile_dir):
+    """Pre-create a LibreOffice user profile that recalculates on load."""
+    user_dir = os.path.join(profile_dir, "user")
+    os.makedirs(user_dir, exist_ok=True)
+    with open(os.path.join(user_dir, "registrymodifications.xcu"), "w", encoding="utf-8") as f:
+        f.write(RECALC_XCU)
+
+
 def force_recalc_flag(src, dst):
-    """Copy the workbook to dst with fullCalcOnLoad set, so LibreOffice recalculates
-    on open regardless of its 'recalc on load' preference. Falls back to a plain copy."""
+    """Copy the workbook to dst with fullCalcOnLoad set — a second nudge to recalc on
+    open, alongside the always-recalc profile. Falls back to a plain copy."""
     try:
         import openpyxl
         wb = openpyxl.load_workbook(src)
@@ -86,23 +110,30 @@ def recalc(path, timeout):
         staged = os.path.join(tmp, "in.xlsx")
         force_recalc_flag(path, staged)
 
-        # Headless convert -> xlsx. With fullCalcOnLoad set, LO recalculates on load
-        # and writes the computed values (incl. any error cells) into the output.
-        profile = "file:///" + tmp.replace("\\", "/") + "/profile"
+        # Headless convert -> xlsx through a fresh, always-recalc profile. LO loads,
+        # recomputes every formula, and writes the results (incl. error cells) out.
+        # Output MUST go to a separate dir: converting in.xlsx into its own folder
+        # collides with the input and LibreOffice silently fails to store the result.
+        outdir = os.path.join(tmp, "out")
+        os.makedirs(outdir, exist_ok=True)
+        profile_dir = os.path.join(tmp, "profile")
+        seed_recalc_profile(profile_dir)
+        profile_url = "file:///" + profile_dir.replace("\\", "/")
         cmd = [soffice, "--headless", "--nologo", "--nofirststartwizard",
-               f"-env:UserInstallation={profile}",
+               f"-env:UserInstallation={profile_url}",
                "--convert-to", "xlsx:Calc MS Excel 2007 XML",
-               "--outdir", tmp, staged]
+               "--outdir", outdir, staged]
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             return {"file": path, "total_errors": -1,
                     "error": f"LibreOffice recalc timed out after {timeout}s"}
 
-        out_xlsx = os.path.join(tmp, "in.xlsx")
+        out_xlsx = os.path.join(outdir, "in.xlsx")
         if not os.path.exists(out_xlsx):
             return {"file": path, "total_errors": -1,
-                    "error": "LibreOffice produced no output"}
+                    "error": f"LibreOffice produced no output (rc={proc.returncode}): "
+                             f"{proc.stderr.strip()[:200]}"}
 
         import openpyxl
         wb = openpyxl.load_workbook(out_xlsx, data_only=True)
