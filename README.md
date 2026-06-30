@@ -20,6 +20,19 @@ This version splits the job:
 Formulas come from code, so they can't break. The LLM only supplies labels,
 structure, and formula *patterns* — never raw cells.
 
+## Requirements
+- **Python deps:** `pip install -r requirements.txt` (requests, pytrends, anthropic, openpyxl).
+- **LibreOffice** — required for the QA gate (`scripts/recalc.py` recalculates formulas
+  headlessly) and the PDF previews. `soffice` must be on your `PATH`.
+  - Install: `winget install --id TheDocumentFoundation.LibreOffice` (Windows),
+    `brew install --cask libreoffice` (macOS), or your distro's `libreoffice` package.
+  - Windows note: the installer does **not** add `soffice` to `PATH`. Either prepend
+    `C:\Program Files\LibreOffice\program` to `PATH`, or point `recalc.py` straight at it
+    with `setx SOFFICE_BIN "C:\Program Files\LibreOffice\program\soffice.exe"`.
+  - Without LibreOffice the QA gate fails closed (`total_errors: -1`) and rejects every
+    build — by design, so nothing ships unverified.
+- **`ANTHROPIC_API_KEY`** — your key, in the environment (used by the spec + listing steps).
+
 ## Run
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...

@@ -2,3 +2,6 @@ requests
 pytrends
 anthropic
 openpyxl
+
+# Not a pip package: LibreOffice (`soffice` on PATH) is also required for the QA gate
+# and PDF previews. See README "Requirements". Override its location with $SOFFICE_BIN.
