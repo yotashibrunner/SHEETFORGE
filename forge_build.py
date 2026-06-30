@@ -44,9 +44,44 @@ def style_header(ws, ncols, accent):
     ws.freeze_panes = "A2"
 
 
+# Formats whose blank input cell is rendered as 0 (so they can't serve as the
+# "is this row in use?" key — 0 != "").
+NUMERIC_FMT = ("currency", "currency0", "int", "percent")
+
+
+def gate_column_index(cols):
+    """Index of the column that says 'this row is in use': the first user-filled
+    text/date input, else the first seed list. Every derived cell on the row is
+    blank-gated on it so empty rows never show ghost data. None if there's nothing
+    to gate on (a pure aggregate sheet)."""
+    for i, c in enumerate(cols):
+        if c["type"] == "input" and c.get("format") not in NUMERIC_FMT:
+            return i
+    for i, c in enumerate(cols):
+        if c["type"] == "seed":
+            return i
+    return None
+
+
+def gate_formula(formula, gate_letter):
+    """Wrap a derived formula so it yields "" until the row's key column is filled."""
+    inner = formula[1:] if formula.startswith("=") else formula
+    return f'=IF(${gate_letter}{{row}}="","",{inner})'
+
+
 def build_sheet(ws, sdef, accent):
     cols = sdef["columns"]
     nrows = sdef.get("rows", 100)
+
+    gi = gate_column_index(cols)
+    gate_letter = get_column_letter(gi + 1) if gi is not None else None
+    # A sheet keyed on a fixed seed list (e.g. a season summary) must not emit rows
+    # past that list — that's where phantom records came from.
+    if cols and cols[0]["type"] == "seed":
+        seed_len = len(cols[0].get("values", []))
+        if seed_len:
+            nrows = min(nrows, seed_len)
+
     for ci, col in enumerate(cols, start=1):
         ws.cell(row=1, column=ci, value=col["header"])
         ws.column_dimensions[get_column_letter(ci)].width = col.get("width", 16)
@@ -57,10 +92,15 @@ def build_sheet(ws, sdef, accent):
             t = col["type"]
             fmt = col.get("format")
             if t == "input":
-                cell.value = 0 if fmt in ("currency", "currency0", "int", "percent") else None
+                cell.value = 0 if fmt in NUMERIC_FMT else None
                 cell.font = INPUT_BLUE
             elif t == "formula":
-                cell.value = col["formula"].replace("{row}", str(r))
+                formula = col["formula"]
+                # Suppress every derived cell to "" until the key column is filled,
+                # unless this IS the key column or the sheet has no key to gate on.
+                if gate_letter and get_column_letter(ci) != gate_letter:
+                    formula = gate_formula(formula, gate_letter)
+                cell.value = formula.replace("{row}", str(r))
                 cell.font = LINK_GREEN if col.get("link") else CALC_BLACK
             elif t == "seed":  # pre-filled label cells (e.g. month names)
                 cell.value = col["values"][r - 2] if (r - 2) < len(col["values"]) else None

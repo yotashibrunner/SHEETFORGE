@@ -99,11 +99,16 @@ def force_recalc_flag(src, dst):
         shutil.copyfile(src, dst)
 
 
-def recalc(path, timeout):
+def recalc_values(path, timeout=120):
+    """Recalculate `path` through LibreOffice and return its computed values.
+
+    Returns (data_only openpyxl Workbook, "") on success, or (None, error_message).
+    Reusable by callers that need the recomputed cells (e.g. forge_batch's ghost-data
+    check), not just an error count. The workbook is read fully into memory, so the
+    temp recalc dir is cleaned up before returning."""
     soffice = find_soffice()
     if not soffice:
-        return {"file": path, "total_errors": -1,
-                "error": "LibreOffice not found; set SOFFICE_BIN or install it"}
+        return None, "LibreOffice not found; set SOFFICE_BIN or install it"
 
     tmp = tempfile.mkdtemp(prefix="recalc_")
     try:
@@ -126,29 +131,39 @@ def recalc(path, timeout):
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
-            return {"file": path, "total_errors": -1,
-                    "error": f"LibreOffice recalc timed out after {timeout}s"}
+            return None, f"LibreOffice recalc timed out after {timeout}s"
 
         out_xlsx = os.path.join(outdir, "in.xlsx")
         if not os.path.exists(out_xlsx):
-            return {"file": path, "total_errors": -1,
-                    "error": f"LibreOffice produced no output (rc={proc.returncode}): "
-                             f"{proc.stderr.strip()[:200]}"}
+            return None, (f"LibreOffice produced no output (rc={proc.returncode}): "
+                          f"{proc.stderr.strip()[:200]}")
 
         import openpyxl
-        wb = openpyxl.load_workbook(out_xlsx, data_only=True)
-        by_type, scanned = {}, 0
-        for ws in wb.worksheets:
-            for row in ws.iter_rows(values_only=True):
-                for v in row:
-                    scanned += 1
-                    if isinstance(v, str) and v in ERROR_VALUES:
-                        by_type[v] = by_type.get(v, 0) + 1
-        return {"file": path, "total_errors": sum(by_type.values()),
-                "errors_by_type": by_type, "cells_scanned": scanned,
-                "recalc_engine": os.path.basename(soffice)}
+        return openpyxl.load_workbook(out_xlsx, data_only=True), ""
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def scan_errors(wb):
+    """Count Excel error sentinels across a recalculated workbook.
+    Returns (total_errors, {error_value: count}, cells_scanned)."""
+    by_type, scanned = {}, 0
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            for v in row:
+                scanned += 1
+                if isinstance(v, str) and v in ERROR_VALUES:
+                    by_type[v] = by_type.get(v, 0) + 1
+    return sum(by_type.values()), by_type, scanned
+
+
+def recalc(path, timeout):
+    wb, err = recalc_values(path, timeout)
+    if wb is None:
+        return {"file": path, "total_errors": -1, "error": err}
+    total, by_type, scanned = scan_errors(wb)
+    return {"file": path, "total_errors": total, "errors_by_type": by_type,
+            "cells_scanned": scanned, "recalc_engine": os.path.basename(find_soffice())}
 
 
 def main():

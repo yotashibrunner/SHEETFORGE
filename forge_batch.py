@@ -4,7 +4,7 @@ forge_batch.py — stamp out a whole catalog in one run.
 Reads catalog.json (list of {niche, template}), and for each:
   1. forge_spec.generate_spec()         -> JSON spec   (LLM, your key)
   2. forge_build.build()                -> .xlsx       (deterministic)
-  3. recalc + error scan                -> QA gate     (rejects any file with errors)
+  3. recalc + error scan + ghost scan   -> QA gate     (rejects errors OR ghost data)
   4. libreoffice xlsx -> PDF            -> Etsy preview
   5. listing.txt                        -> title + tags + description (LLM)
 
@@ -12,6 +12,11 @@ Reads catalog.json (list of {niche, template}), and for each:
 """
 import os, sys, json, subprocess
 import forge_spec, forge_build
+from openpyxl.utils import get_column_letter
+
+# make scripts/recalc.py importable regardless of cwd, for the QA gate
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
+import recalc  # noqa: E402
 
 # Windows consoles default to cp1252; the status glyphs printed below (✓/✗/—) would
 # raise UnicodeEncodeError and abort the whole batch on the first rejected file.
@@ -24,13 +29,51 @@ for _stream in (sys.stdout, sys.stderr):
 
 OUT = "catalog"
 
-def recalc_ok(path):
-    r = subprocess.run([sys.executable, "scripts/recalc.py", path, "60"],
-                       capture_output=True, text=True)
-    try:
-        return json.loads(r.stdout.strip().splitlines()[-1]).get("total_errors", 1) == 0
-    except Exception:
+
+def ghost_cells(wb, spec):
+    """A built workbook has ZERO input data, so every per-row derived cell on a
+    record sheet MUST be blank. Any populated value is a ghost-member bug (M-001,
+    "Paid in Full" on an empty row). Returns a list of offending "Sheet!Cell=value"
+    descriptions. Aggregate/summary sheets (no input column) are skipped — their KPIs
+    legitimately read 0."""
+    bad = []
+    for sdef in spec["sheets"]:
+        cols = sdef["columns"]
+        if not any(c["type"] == "input" for c in cols):
+            continue
+        gi = forge_build.gate_column_index(cols)
+        if gi is None:
+            continue
+        gate_letter = get_column_letter(gi + 1)
+        formula_cols = [i + 1 for i, c in enumerate(cols) if c["type"] == "formula"]
+        ws = wb[sdef["name"]]
+        for r in range(2, sdef.get("rows", 100) + 2):
+            if ws[f"{gate_letter}{r}"].value not in (None, ""):
+                continue  # row is in use -> derived values are legitimate
+            for ci in formula_cols:
+                v = ws.cell(row=r, column=ci).value
+                if v not in (None, ""):
+                    bad.append(f"{sdef['name']}!{get_column_letter(ci)}{r}={v!r}")
+    return bad
+
+
+def qa_ok(xlsx, spec):
+    """Strengthened QA gate: one LibreOffice recalc, then reject on (a) any formula
+    error, or (b) ghost data on empty rows. Fail-closed if the recalc can't run."""
+    wb, err = recalc.recalc_values(xlsx, 120)
+    if wb is None:
+        print(f"  ✗ REJECTED — QA could not run: {err}")
         return False
+    nerr, by_type, _ = recalc.scan_errors(wb)
+    if nerr:
+        print(f"  ✗ REJECTED — {nerr} formula errors {dict(by_type)}.")
+        return False
+    ghosts = ghost_cells(wb, spec)
+    if ghosts:
+        shown = ", ".join(ghosts[:4]) + (" ..." if len(ghosts) > 4 else "")
+        print(f"  ✗ REJECTED — ghost data on {len(ghosts)} empty-row cell(s): {shown}")
+        return False
+    return True
 
 def make_pdf(xlsx, outdir):
     subprocess.run(["soffice", "--headless", "--convert-to", "pdf",
@@ -63,8 +106,8 @@ def main(catalog_file):
         spec = forge_spec.generate_spec(it["niche"], it["template"])
         xlsx = os.path.join(OUT, name + ".xlsx")
         forge_build.build(spec, xlsx)
-        if not recalc_ok(xlsx):
-            print("  ✗ REJECTED — formula errors. Skipping listing.")
+        if not qa_ok(xlsx, spec):
+            print("  Skipping listing.")
             continue
         print("  ✓ clean")
         make_pdf(xlsx, OUT)
