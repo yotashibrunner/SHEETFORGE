@@ -44,7 +44,14 @@ Return ONLY valid JSON (no prose, no markdown fences) matching this schema:
 HARD RULES (non-negotiable — these are why this product doesn't get 1-star reviews):
 1. Input cells the user fills = type "input". Never pre-fill them with fake numbers.
 2. Every total/derived value = type "formula" with a real Excel formula using {row}.
-3. Wrap any division in IFERROR(...,0) to avoid #DIV/0!.
+3. Wrap EVERYTHING that can error in IFERROR — both division (IFERROR(...,0) to avoid
+   #DIV/0!) and EVERY lookup, e.g. VLOOKUP/HLOOKUP/MATCH/INDEX-MATCH (IFERROR(...,"")
+   for text results, IFERROR(...,0) for numeric). A template ships with blank input
+   cells, so an unguarded lookup is #N/A on its very first row.
+   Use IFERROR, NEVER IFNA — and use ONLY classic Excel-2007 functions. The builder
+   writes formulas without the _xlfn. prefix, so post-2007 functions (IFNA, XLOOKUP,
+   IFS, SWITCH, TEXTJOIN, XMATCH) are written unrecognizably and silently resolve to
+   #N/A/#NAME?. Stick to IF, IFERROR, VLOOKUP, INDEX, MATCH, SUMIFS, COUNTIFS, etc.
 4. Cross-sheet references: quote sheet names with spaces ('Sales Log'!$A$2:$A$101) and set "link": true.
 5. Fix the row count in cross-sheet ranges to the sheet's "rows" (e.g. rows:100 -> $2:$101).
 6. Labels must be specific to the niche (real categories, not "Item 1").
