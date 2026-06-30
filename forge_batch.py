@@ -13,6 +13,15 @@ Reads catalog.json (list of {niche, template}), and for each:
 import os, sys, json, subprocess
 import forge_spec, forge_build
 
+# Windows consoles default to cp1252; the status glyphs printed below (✓/✗/—) would
+# raise UnicodeEncodeError and abort the whole batch on the first rejected file.
+# Force UTF-8 so a rejection just prints and the run continues to the next item.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 OUT = "catalog"
 
 def recalc_ok(path):
