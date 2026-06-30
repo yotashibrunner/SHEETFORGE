@@ -19,6 +19,12 @@ catalog/
 *.pdf
 *.zip
 
+# PyInstaller build artifacts (SheetForge.exe)
+build/
+dist/
+*.spec
+*.exe
+
 # Local config / secrets
 config_local.py
 .env

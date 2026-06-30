@@ -33,6 +33,14 @@ structure, and formula *patterns* — never raw cells.
     build — by design, so nothing ships unverified.
 - **`ANTHROPIC_API_KEY`** — your key, in the environment (used by the spec + listing steps).
 
+## Launch (no command line)
+- **`SheetForge.cmd`** — double-click for a menu-driven console launcher.
+- **`SheetForge.exe`** — a windowed app (buttons + live log + API-key field). Build it
+  once with `.\build_exe.ps1` (PyInstaller), then double-click the resulting
+  `SheetForge.exe`. Keep it in this folder — it drives the project's venv Python and
+  still needs LibreOffice installed (see Requirements). Drop an `icon.ico` in the root
+  before building to give it a custom icon.
+
 ## Run
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
