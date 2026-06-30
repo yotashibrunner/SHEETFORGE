@@ -57,6 +57,24 @@ HARD RULES (non-negotiable — these are why this product doesn't get 1-star rev
 6. Labels must be specific to the niche (real categories, not "Item 1").
 7. Provide a Dashboard with 6-9 KPIs and one bar chart referencing a summary sheet.
 8. Keep it genuinely useful for the stated niche and buyer.
+9. Reference the CORRECT source columns. Columns are lettered left-to-right (1st col
+   = A, 2nd = B, 3rd = C, ...); a formula must use the ACTUAL letter of each column it
+   means. A "Full Name" column = the first-name input & " " & the last-name input
+   using THOSE columns' letters (e.g. =B{row}&" "&C{row}) — never an off-by-one or a
+   neighbouring column. After writing each formula, re-check every cell reference
+   against the column list you just defined.
+10. A formula COLUMN applies ONE formula template to every row (with {row}); it cannot
+    hold a different formula per row. Design summaries around that fact:
+    - Heterogeneous scalar metrics (Total Members, Total Revenue, Net Profit, Avg Share
+      Price, ...) go in the Dashboard KPIs — each KPI carries its own formula. Do NOT
+      build a separate "Metrics"/"Summary" sheet whose single value column switches a
+      giant nested-IF on the row's label: that is the only way to fake per-row formulas
+      in a column, and it is unmaintainable and FORBIDDEN. Likewise never stub the
+      value column with "", 0, or IFERROR("","").
+    - A summary SHEET is allowed ONLY for a homogeneous per-category rollup computed by
+      ONE template keyed to a seed label — e.g. a Month seed column plus, per row,
+      =SUMIFS('Log'!$E$2:$E$101,'Log'!$L$2:$L$101,A{row}). Use that as the bar chart's
+      source. Set its "rows" to EXACTLY the seed-label count (no padding rows).
 """
 
 def generate_spec(niche, template_type):
